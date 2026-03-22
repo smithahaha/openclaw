@@ -127,12 +127,8 @@ export function createSessionsSpawnTool(
           }>)
         : undefined;
 
-      if (streamTo && runtime !== "acp") {
-        return jsonResult({
-          status: "error",
-          error: `streamTo is only supported for runtime=acp; got runtime=${runtime}`,
-        });
-      }
+      // streamTo is only meaningful for acp runtime — silently ignore for subagent
+      // (LLMs sometimes include it regardless of runtime)
 
       if (resumeSessionId && runtime !== "acp") {
         return jsonResult({

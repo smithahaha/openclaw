@@ -2,6 +2,29 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 
+const IS_WINDOWS = process.platform === "win32";
+
+/**
+ * On Windows, fs.rename() may fail with EPERM/EACCES when the target file
+ * is momentarily locked (antivirus scan, prior handle not yet released).
+ * Retry with exponential backoff to work around transient locks.
+ */
+async function renameWithRetry(src: string, dest: string, maxRetries = 5): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.rename(src, dest);
+      return;
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (IS_WINDOWS && (code === "EPERM" || code === "EACCES") && attempt < maxRetries) {
+        await new Promise((r) => setTimeout(r, 50 * 2 ** attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 export async function readJsonFile<T>(filePath: string): Promise<T | null> {
   try {
     const raw = await fs.readFile(filePath, "utf8");
@@ -45,7 +68,7 @@ export async function writeTextAtomic(
     } catch {
       // best-effort; ignore on platforms without chmod
     }
-    await fs.rename(tmp, filePath);
+    await renameWithRetry(tmp, filePath);
     try {
       await fs.chmod(filePath, mode);
     } catch {
